@@ -124,9 +124,7 @@ impl Board {
                     let neighbors = self.get_neighbors(row, col);
                     for (row, col) in neighbors {
                         //if the neighbor is not uncovered is empty and not visited add it to the visited set
-                        if !cells[row][col].uncovered {
-                            visited.insert((row, col));
-                        }
+                        visited.insert((row, col));
                     }
                 }
             }
