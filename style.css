@@ -1,0 +1,27 @@
+.row {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid grey;
+  height: 70px;
+}
+
+.cell {
+  display: flex;
+  border: 1px solid grey;
+  align-items: center;
+  justify-content: center;
+  height: 70px;
+  width: 70px;
+  cursor: pointer;
+}
+
+.covered {
+  width: 100%;
+  height: 100%;
+  background-color: grey;
+  border: 1px solid black;
+}
+
+.covered:hover {
+  background-color: black;
+}
