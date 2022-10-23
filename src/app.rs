@@ -1,10 +1,9 @@
+use gloo::console::log;
+use rand;
 use std::{
     collections::HashSet,
     ops::{Deref, DerefMut},
 };
-
-use gloo::console::log;
-use rand;
 use web_sys::console;
 use yew::prelude::*;
 
@@ -31,6 +30,19 @@ impl CellState {
     fn is_empty(&self) -> bool {
         self.content == Cell::Empty
     }
+
+    fn is_mine(&self) -> bool {
+        self.content == Cell::Mine
+    }
+
+    fn get_value(&self) -> usize {
+        //if cell is value return value
+        if let Cell::Value(value) = self.content {
+            value as usize
+        } else {
+            0
+        }
+    }
 }
 
 //struct for vec of vec of cell state
@@ -38,8 +50,6 @@ impl CellState {
 struct Board {
     cells: Vec<Vec<CellState>>,
 }
-
-type BoardType = Vec<Vec<CellState>>;
 
 impl Board {
     //create a new board
@@ -70,21 +80,70 @@ impl Board {
         Board { cells: grid }
     }
 
-    //uncover a cell given a row and column and cells visited
+    //uncover a cell given a row and column and hashset of empty cells visited
     fn uncover(&self, row: usize, col: usize) -> Result<Board, Board> {
+        let mut visited: HashSet<(usize, usize)> = HashSet::new();
+        //add the current cell to the visited set
+        visited.insert((row, col));
         let mut cells = self.deref().to_vec();
-        //only oncover if covered
-        if !cells[row][col].uncovered {
-            cells[row][col].uncovered = true;
-            //if cell is a mine, game over
-            if cells[row][col].content == Cell::Mine {
-                log!("Game Over");
-                return Err(Board { cells });
+        //while the hashset of visited cells is not empty
+        while !visited.is_empty() {
+            //get the first element in the hashset
+            let (row, col) = visited.iter().next().unwrap().clone();
+            //remove the first element from the hashset
+            visited.remove(&(row, col));
+            //if the cell is not uncovered
+            if !cells[row][col].uncovered {
+                //uncover the cell
+                cells[row][col].uncovered = true;
+                //if cell is a bomb return error
+                if cells[row][col].is_mine() {
+                    return Err(Board { cells });
+                }
+                //if the cell is empty
+                if cells[row][col].is_empty() {
+                    //get the neighbors of the cell
+                    let neighbors = self.get_neighbors(row, col);
+                    for (row, col) in neighbors {
+                        //if the neighbor is not uncovered is empty
+                        if !cells[row][col].uncovered && cells[row][col].is_empty() {
+                            visited.insert((row, col));
+                        }
+                    }
+                }
             }
-            //if the cell is empty uncover all the surrounding cells and check if they are empty
         }
+
         //return the new board
         Ok(Board { cells })
+    }
+
+    fn get_neighbors(&self, row: usize, col: usize) -> Vec<(usize, usize)> {
+        let mut neighbors = Vec::new();
+        //get the neighbors of a cell
+        //get the cells to the top of cell
+
+        for i in 0..3 {
+            for j in 0..3 {
+                let row_attempt = if row == 0 { 0 } else { row - 1 + i };
+                //push cells to the top left, top, and top right
+                //if cell is not the cell itself and cell is not out out of bounds
+                //get column
+                let col_attempt = if col == 0 { 0 } else { col - 1 + j };
+                if (row_attempt != row || col_attempt != col)
+                    && !self.is_out_of_bounds(row_attempt, col_attempt)
+                {
+                    neighbors.push((row_attempt, col_attempt));
+                }
+            }
+        }
+
+        //return the neighbors
+        neighbors
+    }
+
+    fn is_out_of_bounds(&self, row: usize, col: usize) -> bool {
+        row >= GRID_SIZE || col >= GRID_SIZE
     }
 }
 
