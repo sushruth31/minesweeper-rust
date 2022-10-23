@@ -51,20 +51,18 @@ struct Board {
     cells: Vec<Vec<CellState>>,
 }
 
+fn coin_toss() -> bool {
+    rand::random::<f64>() > 0.7
+}
+
 impl Board {
     //create a new board
     fn new() -> Self {
         let mut grid = Vec::new();
         for _ in 0..GRID_SIZE {
             let mut row = Vec::new();
-            for i in 0..GRID_SIZE {
-                //get a radom number between 0 and grid size
-                let num_mines = rand::random::<usize>() % GRID_SIZE;
-                //make a vector of length betweeen 0 and grid size and fill it with random numbers between 0 and grid size
-                let mines_indicies = (0..num_mines)
-                    .map(|_| rand::random::<usize>() % GRID_SIZE)
-                    .collect::<Vec<_>>();
-                if mines_indicies.contains(&i) {
+            for _ in 0..GRID_SIZE {
+                if coin_toss() {
                     row.push(CellState {
                         content: Cell::Mine,
                         uncovered: false,
@@ -76,8 +74,29 @@ impl Board {
             }
             grid.push(row);
         }
+        let mut board = Board {
+            cells: grid.to_vec(),
+        };
+        //loop through each cell and set the value
+        for (i, row) in grid.iter().enumerate() {
+            for (j, cell) in row.iter().enumerate() {
+                if cell.is_mine() {
+                    continue;
+                }
+                //get the neihbords of the cell and filter for mines and count them
+                let mine_count = board
+                    .get_neighbors(i, j)
+                    .iter()
+                    .filter(|c| board.is_cell_mine(c.0, c.1))
+                    .count();
+                //if count is greater than 0 set the value of the cell to the count
+                if mine_count > 0 {
+                    board.cells[i][j].content = Cell::Value(mine_count as i32)
+                }
+            }
+        }
         //return new Board
-        Board { cells: grid }
+        board
     }
 
     //uncover a cell given a row and column and hashset of empty cells visited
@@ -88,9 +107,8 @@ impl Board {
         let mut cells = self.deref().to_vec();
         //while the hashset of visited cells is not empty
         while !visited.is_empty() {
-            //get the first element in the hashset
+            //get the first element in the hashset and remove it
             let (row, col) = visited.iter().next().unwrap().clone();
-            //remove the first element from the hashset
             visited.remove(&(row, col));
             //if the cell is not uncovered
             if !cells[row][col].uncovered {
@@ -105,8 +123,11 @@ impl Board {
                     //get the neighbors of the cell
                     let neighbors = self.get_neighbors(row, col);
                     for (row, col) in neighbors {
-                        //if the neighbor is not uncovered is empty
-                        if !cells[row][col].uncovered && cells[row][col].is_empty() {
+                        //if the neighbor is not uncovered is empty and not visited add it to the visited set
+                        if !cells[row][col].uncovered
+                            && cells[row][col].is_empty()
+                            && !visited.contains(&(row, col))
+                        {
                             visited.insert((row, col));
                         }
                     }
@@ -124,17 +145,20 @@ impl Board {
         //get the cells to the top of cell
 
         for i in 0..3 {
+            //if row is 0 and i is 0 or row is grid size - 1 and i is 2 skip
+            if (row == 0 && i == 0) || (row == GRID_SIZE - 1 && i == 2) {
+                continue;
+            }
             for j in 0..3 {
-                let row_attempt = if row == 0 { 0 } else { row - 1 + i };
-                //push cells to the top left, top, and top right
-                //if cell is not the cell itself and cell is not out out of bounds
-                //get column
-                let col_attempt = if col == 0 { 0 } else { col - 1 + j };
-                if (row_attempt != row || col_attempt != col)
-                    && !self.is_out_of_bounds(row_attempt, col_attempt)
-                {
-                    neighbors.push((row_attempt, col_attempt));
+                //if col is 0 and j is 0 or col is grid size - 1 and j is 2 skip
+                if (col == 0 && j == 0) || (col == GRID_SIZE - 1 && j == 2) {
+                    continue;
                 }
+                let row_attempt = row + i - 1;
+                //get column
+                let col_attempt = col + j - 1;
+                //push the cell to the neighbors vec
+                neighbors.push((row_attempt, col_attempt));
             }
         }
 
@@ -144,6 +168,14 @@ impl Board {
 
     fn is_out_of_bounds(&self, row: usize, col: usize) -> bool {
         row >= GRID_SIZE || col >= GRID_SIZE
+    }
+
+    fn is_cell_empty(&self, row: usize, col: usize) -> bool {
+        self.cells[row][col].is_empty()
+    }
+
+    fn is_cell_mine(&self, row: usize, col: usize) -> bool {
+        self.cells[row][col].is_mine()
     }
 }
 
