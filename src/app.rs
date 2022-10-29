@@ -15,6 +15,7 @@ const GRID_SIZE: usize = 10;
 struct CellState {
     content: Cell,
     uncovered: bool,
+    flagged: bool,
 }
 
 impl Default for CellState {
@@ -22,6 +23,7 @@ impl Default for CellState {
         CellState {
             content: Cell::Empty,
             uncovered: false,
+            flagged: false,
         }
     }
 }
@@ -65,7 +67,7 @@ impl Board {
                 if coin_toss() {
                     row.push(CellState {
                         content: Cell::Mine,
-                        uncovered: false,
+                        ..CellState::default()
                     });
                 } else {
                     //push the default cell state
@@ -84,11 +86,14 @@ impl Board {
                     continue;
                 }
                 //get the neihbords of the cell and filter for mines and count them
-                let mine_count = board
-                    .get_neighbors(i, j)
-                    .iter()
-                    .filter(|c| board.is_cell_mine(c.0, c.1))
-                    .count();
+                let mine_count = board.get_neighbors(i, j).iter().fold(0, |mut acc, cell| {
+                    if board.is_cell_mine(cell.0, cell.1) {
+                        acc + 1
+                    } else {
+                        acc
+                    }
+                });
+
                 //if count is greater than 0 set the value of the cell to the count
                 if mine_count > 0 {
                     board.cells[i][j].content = Cell::Value(mine_count as i32)
@@ -97,6 +102,29 @@ impl Board {
         }
         //return new Board
         board
+    }
+
+    fn is_cell_flagged(&self, row: usize, col: usize) -> bool {
+        self.cells[row][col].flagged
+    }
+
+    fn add_flag(&self, row: usize, col: usize) -> Self {
+        //copy the board
+        let mut board = self.deref().clone();
+        board[row][col].flagged = true;
+        return Board {
+            cells: board.to_vec(),
+        };
+    }
+
+    fn remove_flag(&self, row: usize, col: usize) -> Self {
+        //copy the board
+        let mut board = self.deref().clone();
+        board[row][col].flagged = false;
+        log!("remove flag");
+        return Board {
+            cells: board.to_vec(),
+        };
     }
 
     //uncover a cell given a row and column and hashset of empty cells visited
@@ -219,6 +247,10 @@ pub fn app() -> Html {
     let on_oncover: Callback<(usize, usize)> = {
         let grid_state = grid_state.clone();
         Callback::from(move |(row, col)| {
+            //if the cell is flagged return
+            if grid_state.is_cell_flagged(row, col) {
+                return;
+            }
             //uncover the cell and get the new board
             let new_board = grid_state.uncover(row, col);
             //set the board
@@ -238,10 +270,12 @@ pub fn app() -> Html {
     let on_flag = {
         let grid_state = grid_state.clone();
         move |(row, col)| -> () {
-            let grid_state = grid_state.to_vec();
-            let cell_state = grid_state[row as usize][col as usize];
-            if cell_state.uncovered {
-                return;
+            //if the cell is flagged remove the flag
+            if grid_state.is_cell_flagged(row, col) {
+                grid_state.set(grid_state.remove_flag(row, col));
+            } else {
+                //if the cell is not flagged add the flag
+                grid_state.set(grid_state.add_flag(row, col));
             }
         }
     };
@@ -285,9 +319,13 @@ pub fn app() -> Html {
                                     Cell::Empty => html!{" "},
                                 }
                             } else {
-                                //covered class for cell_inner
+                                //if cell is not uncovered and is flagged show flag
+                                if cell_inner.flagged {
+                                    html!{<div {onclick} class="covered">{"🚩"}</div>}
+                                } else {
                                 html!{
                                     <div {onclick} class="covered"></div>
+                                }
                                 }
                             }}
                         </div>
@@ -302,9 +340,47 @@ pub fn app() -> Html {
         })
         .collect::<Vec<_>>();
     //create rows of grid size
+
+    //initial class for uncover action
+    let mut uncover_class = "".to_string();
+    //if the action is uncover then append selected to the class
+    if *action == Action::Uncover {
+        uncover_class.push_str(" selected");
+    }
+    //initial class for flag action
+    let mut flag_class = "".to_string();
+    //if the action is flag then append selected to the class
+    if *action == Action::Flag {
+        flag_class.push_str(" selected");
+    }
+
+    //callback for action click to set the action
+    let on_action_click = {
+        let action = action.clone();
+        Callback::from(move |_: MouseEvent| {
+            //if the action is uncover then set the action to flag else set the action to uncover
+            if *action == Action::Uncover {
+                action.set(Action::Flag);
+            } else {
+                action.set(Action::Uncover);
+            }
+        })
+    };
+
+    let on_action_click_clone = on_action_click.clone();
+
     html! {
         <main>
         <h1>{ "Minesweeeper Rust!" }</h1>
+        //add icons for flag and uncover
+        <div class="actions">
+            <div onclick={on_action_click} class={uncover_class.to_string()}>
+                <p>{ "Uncover" }</p>
+            </div>
+            <div onclick={on_action_click_clone} class={flag_class.to_string()}>
+                <p>{ "Flag" }</p>
+            </div>
+        </div>
         //if game result is lose show game over
         {if let Some(GameResult::Lose) = game_result_inner {
             html!{
