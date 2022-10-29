@@ -369,6 +369,34 @@ pub fn app() -> Html {
 
     let on_action_click_clone = on_action_click.clone();
 
+    //useeffect on first render to uncover a blank cell
+    {
+        let grid_state = grid_state.clone();
+        let cells = grid_state.deref().to_vec();
+        use_effect_with_deps(
+            move |_| {
+                //loop through the board and find a blank cell
+                for (i, row) in cells.iter().enumerate() {
+                    for (j, cell) in row.iter().enumerate() {
+                        if cell.content == Cell::Empty {
+                            //if the cell is blank uncover it
+                            let res = grid_state.uncover(i, j);
+                            //if the result is ok set the board to the new board
+                            if let Ok(new_board) = res {
+                                grid_state.set(new_board);
+                            } else {
+                                //unreachable
+                                unreachable!();
+                            }
+                        }
+                    }
+                }
+                || ()
+            },
+            (), // dependents
+        );
+    }
+
     html! {
         <main>
         <h1>{ "Minesweeeper Rust!" }</h1>
