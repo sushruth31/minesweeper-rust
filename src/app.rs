@@ -372,11 +372,10 @@ pub fn app() -> Html {
     //useeffect on first render to uncover a blank cell
     {
         let grid_state = grid_state.clone();
-        let cells = grid_state.deref().to_vec();
         use_effect_with_deps(
             move |_| {
                 //loop through the board and find a blank cell
-                for (i, row) in cells.iter().enumerate() {
+                for (i, row) in grid_state.iter().enumerate() {
                     for (j, cell) in row.iter().enumerate() {
                         if cell.content == Cell::Empty {
                             //if the cell is blank uncover it
