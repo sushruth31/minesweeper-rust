@@ -1,23 +1,24 @@
 [package]
-name = "trunk-template"
-version = "0.1.0"
+name = "minesweeper"
+version = "0.2.0"
 edition = "2021"
-description = "Template for starting a Yew project using Trunk"
-readme = "README.md"
-repository = "https://github.com/yewstack/yew-trunk-minimal-template"
-license = "MIT OR Apache-2.0"
-keywords = ["yew", "trunk"]
-categories = ["gui", "wasm", "web-programming"]
+description = "Minesweeper implemented in Rust, compiled to WebAssembly and rendered with Yew"
+repository = "https://github.com/sushruth31/minesweeper-rust"
+license = "MIT"
+keywords = ["minesweeper", "game", "yew", "wasm"]
+categories = ["games", "wasm"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# The rules module is framework-free and builds for the host, so `cargo test`
+# needs nothing but `rand`. Everything browser-shaped is wasm-only.
 [dependencies]
-yew = "0.19"
-rand = "0.8.5"
-getrandom = { version = "0.2", features = ["js"] }
-gloo = "0.7.0"
-serde-wasm-bindgen = "0.4.5"
-serde = { version = "1.0", features = ["derive"] }
+rand = "0.8"
 
-[dependencies.web-sys]
-version = "0.3"
-features = ["console"]
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+yew = "0.19"
+getrandom = { version = "0.2", features = ["js"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"

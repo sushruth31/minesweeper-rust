@@ -1,39 +1,96 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  background: linear-gradient(to bottom right, #444444, #009a5b);
+  color: #fff6d5;
+  font-family: system-ui, sans-serif;
+}
+
+main {
+  text-align: center;
+}
+
+h1 {
+  font-size: 1.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.mode {
+  background: transparent;
+  border: 1px solid #fff6d5;
+  border-radius: 3px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.35rem 0.9rem;
+}
+
+.mode.selected {
+  background: #fff6d5;
+  color: #222;
+}
+
+.status {
+  font-variant-numeric: tabular-nums;
+  min-height: 1.4em;
+}
+
+.status.won {
+  color: #b6ff9e;
+}
+
+.status.lost {
+  color: #ff9e9e;
+}
+
+.fatal {
+  color: #ff9e9e;
+  max-width: 34rem;
+}
+
 .row {
   display: flex;
-  align-items: center;
-  border-bottom: 1px solid grey;
-  height: 70px;
 }
 
 .cell {
-  display: flex;
-  border: 1px solid grey;
   align-items: center;
+  border: 1px solid #2f2f2f;
+  box-sizing: border-box;
+  display: flex;
+  font-weight: 600;
+  height: 40px;
   justify-content: center;
-  height: 70px;
-  width: 70px;
-  cursor: pointer;
+  width: 40px;
 }
 
 .covered {
-  width: 100%;
-  height: 100%;
-  background-color: grey;
-  border: 1px solid black;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background-color: #8a8a8a;
+  cursor: pointer;
 }
 
 .covered:hover {
-  background-color: black;
+  background-color: #6d6d6d;
 }
 
-.selected {
-  background-color: black;
-  color: white;
+.uncovered {
+  background-color: #d8d4c2;
+  color: #1d1d1d;
 }
 
-.actions {
-  cursor: pointer;
+.mine {
+  background-color: #c25b5b;
 }
