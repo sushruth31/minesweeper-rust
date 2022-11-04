@@ -247,3 +247,236 @@ impl GameState {
         next
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    fn rng() -> StdRng {
+        StdRng::seed_from_u64(0xC0FFEE)
+    }
+
+    /// Builds a fully seeded board from a picture: `*` is a mine, `.` is not.
+    fn layout(rows: &[&str]) -> Board {
+        let width = rows[0].len();
+        let mines = rows
+            .iter()
+            .flat_map(|row| row.bytes())
+            .filter(|b| *b == b'*')
+            .count();
+        let config = Config::new(width, rows.len(), 0).expect("test layout dimensions");
+        let mut board = Board::new(config);
+        board.config = Config { mines, ..config };
+        board.cells = rows
+            .iter()
+            .flat_map(|row| row.bytes())
+            .map(|byte| CellState {
+                content: if byte == b'*' {
+                    Cell::Mine
+                } else {
+                    Cell::default()
+                },
+                ..CellState::default()
+            })
+            .collect();
+        board.count_adjacent();
+        board.seeded = true;
+        board
+    }
+
+    fn covered(board: &Board, row: usize, col: usize) -> bool {
+        !board.cell(row, col).uncovered
+    }
+
+    #[test]
+    fn neighbors_exclude_the_cell_itself() {
+        let board = layout(&["...", "...", "..."]);
+        assert!(!board.neighbors(1, 1).any(|position| position == (1, 1)));
+    }
+
+    #[test]
+    fn neighbor_counts_shrink_at_edges_and_corners() {
+        let board = layout(&["...", "...", "..."]);
+        assert_eq!(board.neighbors(1, 1).count(), 8);
+        assert_eq!(board.neighbors(0, 1).count(), 5);
+        assert_eq!(board.neighbors(0, 0).count(), 3);
+        assert_eq!(board.neighbors(2, 2).count(), 3);
+    }
+
+    #[test]
+    fn adjacency_counts_do_not_wrap_around_the_row_boundary() {
+        // Without row-major bounds checks, (0,2) and (1,0) would look adjacent.
+        let board = layout(&["..*", "...", "..."]);
+        assert_eq!(board.cell(1, 0).content, Cell::Adjacent(0));
+        assert_eq!(board.cell(1, 1).content, Cell::Adjacent(1));
+        assert_eq!(board.cell(0, 1).content, Cell::Adjacent(1));
+    }
+
+    #[test]
+    fn a_cell_touching_every_neighbor_counts_all_eight() {
+        let board = layout(&["***", "*.*", "***"]);
+        assert_eq!(board.cell(1, 1).content, Cell::Adjacent(8));
+    }
+
+    #[test]
+    fn flood_fill_reveals_the_numbered_border_but_never_steps_past_it() {
+        let mut board = layout(&["....", "....", "*...", "...."]);
+        assert_eq!(board.reveal(0, 3, &mut rng()), None);
+        assert!(!covered(&board, 0, 0), "the whole blank region opens");
+        assert!(!covered(&board, 1, 0), "its numbered border opens with it");
+        assert!(covered(&board, 2, 0), "the mine stays covered");
+        assert!(covered(&board, 3, 0), "so does the number behind the mine");
+    }
+
+    #[test]
+    fn flood_fill_does_not_cross_a_numbered_cell() {
+        let mut board = layout(&["...", ".*.", "..."]);
+        assert_eq!(board.reveal(0, 0, &mut rng()), None);
+        // Every non-mine cell touches the mine, so only the clicked cell opens.
+        assert!(!covered(&board, 0, 0));
+        assert!(covered(&board, 0, 2));
+        assert!(covered(&board, 2, 2));
+    }
+
+    #[test]
+    fn flood_fill_skips_flagged_cells_so_a_marked_guess_survives_the_sweep() {
+        let mut board = layout(&["....", "....", "...."]);
+        board.toggle_flag(2, 3);
+        board.reveal(0, 0, &mut rng());
+        assert!(covered(&board, 2, 3));
+        assert!(!covered(&board, 2, 2));
+    }
+
+    #[test]
+    fn clearing_an_empty_board_in_one_click_wins() {
+        let mut board = layout(&["...", "...", "..."]);
+        assert_eq!(board.reveal(1, 1, &mut rng()), Some(GameResult::Won));
+    }
+
+    #[test]
+    fn revealing_a_mine_loses_and_exposes_every_other_mine() {
+        let mut board = layout(&["*..", "...", "..*"]);
+        assert_eq!(board.reveal(0, 0, &mut rng()), Some(GameResult::Lost));
+        assert!(!covered(&board, 0, 0));
+        assert!(!covered(&board, 2, 2));
+        assert!(covered(&board, 1, 1), "safe cells are not given away");
+    }
+
+    #[test]
+    fn a_win_needs_every_safe_cell_and_is_indifferent_to_flags() {
+        let mut board = layout(&["*..", "...", "..."]);
+        board.toggle_flag(0, 0);
+        assert_eq!(board.reveal(2, 2, &mut rng()), Some(GameResult::Won));
+        assert!(covered(&board, 0, 0), "winning never uncovers the mine");
+    }
+
+    #[test]
+    fn a_flagged_cell_cannot_be_revealed_until_the_flag_comes_off() {
+        let mut board = layout(&["*..", "...", "..."]);
+        board.toggle_flag(0, 0);
+        assert_eq!(board.reveal(0, 0, &mut rng()), None);
+        assert!(covered(&board, 0, 0));
+        board.toggle_flag(0, 0);
+        assert_eq!(board.reveal(0, 0, &mut rng()), Some(GameResult::Lost));
+    }
+
+    #[test]
+    fn flagging_an_uncovered_cell_is_a_no_op() {
+        let mut board = layout(&["...", "...", "..."]);
+        board.reveal(1, 1, &mut rng());
+        board.toggle_flag(1, 1);
+        assert!(!board.cell(1, 1).flagged);
+    }
+
+    #[test]
+    fn mines_remaining_tracks_flags_and_may_go_negative() {
+        let mut board = layout(&["*..", "...", "..."]);
+        assert_eq!(board.mines_remaining(), 1);
+        board.toggle_flag(0, 0);
+        assert_eq!(board.mines_remaining(), 0);
+        board.toggle_flag(0, 1);
+        assert_eq!(board.mines_remaining(), -1);
+    }
+
+    #[test]
+    fn out_of_bounds_coordinates_are_ignored_rather_than_panicking() {
+        let mut board = layout(&["...", "...", "..."]);
+        assert_eq!(board.reveal(3, 0, &mut rng()), None);
+        board.toggle_flag(0, 99);
+        assert!(board.rows().flatten().all(|cell| !cell.flagged));
+    }
+
+    #[test]
+    fn seeding_places_exactly_the_requested_number_of_mines() {
+        let config = Config::new(9, 9, 20).expect("valid config");
+        let mut board = Board::new(config);
+        board.reveal(4, 4, &mut rng());
+        let mines = board
+            .rows()
+            .flatten()
+            .filter(|cell| cell.content == Cell::Mine)
+            .count();
+        assert_eq!(mines, 20);
+    }
+
+    #[test]
+    fn the_opening_click_and_its_eight_neighbors_are_always_mine_free() {
+        let config = Config::new(4, 4, 7).expect("valid config"); // maximum density
+        for seed in 0..200 {
+            let mut board = Board::new(config);
+            let outcome = board.reveal(1, 1, &mut StdRng::seed_from_u64(seed));
+            assert_ne!(
+                outcome,
+                Some(GameResult::Lost),
+                "seed {seed} put a mine under the click"
+            );
+            let safe = board.neighbors(1, 1).chain(std::iter::once((1, 1)));
+            assert!(safe
+                .map(|(r, c)| board.cell(r, c))
+                .all(|cell| cell.content != Cell::Mine));
+        }
+    }
+
+    #[test]
+    fn mine_placement_is_reproducible_for_a_fixed_seed() {
+        let config = Config::new(8, 8, 10).expect("valid config");
+        let boards: Vec<Board> = (0..2)
+            .map(|_| {
+                let mut board = Board::new(config);
+                board.reveal(0, 0, &mut StdRng::seed_from_u64(7));
+                board
+            })
+            .collect();
+        assert_eq!(boards[0], boards[1]);
+    }
+
+    #[test]
+    fn actions_after_the_game_ends_leave_the_state_untouched() {
+        let lost = GameState {
+            board: layout(&["*...", "....", "....", "...."]),
+            result: Some(GameResult::Lost),
+        };
+        assert_eq!(lost.apply(Action::Reveal(3, 3), &mut rng()), lost);
+        assert_eq!(lost.apply(Action::Flag(3, 3), &mut rng()), lost);
+    }
+
+    #[test]
+    fn restart_rebuilds_an_unseeded_board_with_the_same_configuration() {
+        let config = Config::new(6, 6, 5).expect("valid config");
+        let state = GameState::new(config).apply(Action::Reveal(0, 0), &mut rng());
+        let restarted = state.apply(Action::Restart, &mut rng());
+        assert_eq!(restarted, GameState::new(config));
+        assert!(restarted.board.rows().flatten().all(|cell| !cell.uncovered));
+    }
+
+    #[test]
+    fn a_restart_is_honoured_even_after_a_loss() {
+        let state = GameState {
+            board: layout(&["*..", "...", "..."]),
+            result: Some(GameResult::Lost),
+        };
+        assert!(!state.apply(Action::Restart, &mut rng()).is_over());
+    }
+}

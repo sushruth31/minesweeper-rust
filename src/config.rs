@@ -96,3 +96,68 @@ fn parse(var: &'static str, raw: Option<&str>, fallback: usize) -> Result<usize,
         value: value.to_owned(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unset_variables_fall_back_to_the_default_board() {
+        assert_eq!(parse(WIDTH_VAR, None, 10), Ok(10));
+    }
+
+    #[test]
+    fn surrounding_whitespace_in_a_build_variable_is_tolerated() {
+        assert_eq!(parse(WIDTH_VAR, Some(" 16 "), 10), Ok(16));
+    }
+
+    #[test]
+    fn a_non_numeric_build_variable_is_rejected_by_name() {
+        let error = parse(MINES_VAR, Some("lots"), 15);
+        assert_eq!(
+            error,
+            Err(ConfigError::NotANumber {
+                var: MINES_VAR,
+                value: "lots".to_owned(),
+            })
+        );
+        assert!(format!("{}", error.unwrap_err()).contains(MINES_VAR));
+    }
+
+    #[test]
+    fn a_zero_dimension_is_rejected_naming_the_offending_axis() {
+        assert_eq!(
+            Config::new(0, 10, 1),
+            Err(ConfigError::ZeroDimension { var: WIDTH_VAR })
+        );
+        assert_eq!(
+            Config::new(10, 0, 1),
+            Err(ConfigError::ZeroDimension { var: HEIGHT_VAR })
+        );
+    }
+
+    #[test]
+    fn mine_count_may_not_eat_into_the_guaranteed_safe_region() {
+        assert_eq!(
+            Config::new(4, 4, 7),
+            Ok(Config {
+                width: 4,
+                height: 4,
+                mines: 7,
+            })
+        );
+        assert_eq!(
+            Config::new(4, 4, 8),
+            Err(ConfigError::TooManyMines {
+                mines: 8,
+                capacity: 7,
+            })
+        );
+    }
+
+    #[test]
+    fn a_board_smaller_than_the_safe_region_admits_no_mines() {
+        assert!(Config::new(2, 2, 0).is_ok());
+        assert!(Config::new(2, 2, 1).is_err());
+    }
+}
