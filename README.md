@@ -1,75 +1,125 @@
-# Yew Trunk Template
+# Minesweeper — the classic game in Rust, compiled to WebAssembly
 
-This is a fairly minimal template for a Yew app that's built with [Trunk].
+[![ci](https://github.com/sushruth31/minesweeper-rust/actions/workflows/ci.yml/badge.svg)](https://github.com/sushruth31/minesweeper-rust/actions/workflows/ci.yml)
 
-## Usage
+A playable minesweeper board rendered with [Yew](https://yew.rs) and served as a
+single wasm module by [Trunk](https://trunkrs.dev). Written over a couple of
+evenings to learn Yew's hook API, but the interesting part is not the UI: it is
+keeping the rules — first-click safety, flood fill, win detection — in a module
+that knows nothing about the browser, so they can be tested with a plain
+`cargo test` instead of a headless Chrome.
 
-For a more thorough explanation of Trunk and its features, please head over to the [repository][trunk].
+## Stack
 
-### Installation
+- **Rust 2021 / wasm32-unknown-unknown** — the whole game, logic and view.
+- **Yew 0.19** — function components and `use_reducer`, which maps cleanly onto
+  a pure `(state, action) -> state` transition.
+- **Trunk** — asset pipeline and dev server; runs `wasm-bindgen` and fingerprints
+  the CSS so nothing needs a hand-written build script.
+- **rand** — `getrandom`'s `js` feature backs it with `crypto.getRandomValues`
+  in the browser. Every rules function takes a `&mut impl Rng`, so the tests
+  hand it a seeded `StdRng` and get byte-identical boards.
 
-If you don't already have it installed, it's time to install Rust: <https://www.rust-lang.org/tools/install>.
-The rest of this guide assumes a typical Rust installation which contains both `rustup` and Cargo.
+No runtime dependencies beyond those, and no JavaScript of my own.
 
-To compile Rust to WASM, we need to have the `wasm32-unknown-unknown` target installed.
-If you don't already have it, install it with the following command:
+## Running it
 
 ```bash
 rustup target add wasm32-unknown-unknown
+cargo install trunk
+
+trunk serve --open          # http://localhost:8080, rebuilds on save
 ```
 
-Now that we have our basics covered, it's time to install the star of the show: [Trunk].
-Simply run the following command to install it:
+Board size and mine count are build-time settings (a wasm module has no process
+environment). Copy `.env.example`, edit it, and export before building:
 
 ```bash
-cargo install trunk wasm-bindgen-cli
+cp .env.example .env
+set -a; . ./.env; set +a
+trunk build --release       # output in dist/
 ```
 
-That's it, we're done!
+Everything is optional: unset variables fall back to a 10x10 grid with 15 mines.
+A malformed or impossible value aborts start-up with an on-page error naming the
+variable rather than quietly clamping.
 
-### Running
+## Architecture
+
+```
+index.html ──> src/main.rs ──> app::App ──> app::Game
+                    │                          │
+                    │  Config::from_build_env  │  dispatch(Action)
+                    ▼                          ▼
+             src/config.rs             GameState::apply  (src/game.rs)
+                                               │
+                                               ▼
+                                        Board  (rules, no DOM)
+```
+
+| Module          | Responsibility                                                              | Builds for |
+|-----------------|-----------------------------------------------------------------------------|------------|
+| `src/game.rs`   | `Board`, flood fill, mine placement, win/loss. Zero framework imports.       | host + wasm |
+| `src/config.rs` | Board dimensions from the build environment, validated once.                 | host + wasm |
+| `src/app.rs`    | Yew components. Renders `Board`, emits `Action`, holds no rules.              | wasm only  |
+| `src/main.rs`   | Mounts the app, or prints a hint if you `cargo run` it on the host.           | both       |
+
+`app` is behind `#[cfg(target_arch = "wasm32")]`, and Yew is declared under
+`[target.'cfg(target_arch = "wasm32")'.dependencies]`, so a host `cargo test`
+never compiles a line of DOM code.
+
+## Design notes
+
+- **The first click is never a mine.** Mines are not placed at construction
+  time; the board stays empty until the first `reveal`, which then lays them at
+  random over every cell *except* the clicked one and its eight neighbours. That
+  guarantees the opening move always cracks open a blank region instead of
+  ending the game on move one — the single most common bug in a naive
+  implementation. It also has a consequence worth stating: nine cells can never
+  hold a mine, so `Config` rejects any mine count above `width * height - 9` at
+  start-up rather than looping forever looking for a free square.
+- **Generation and flood fill are both O(n) in the number of cells.** Mines are
+  drawn with a partial Fisher–Yates (`choose_multiple`) over the candidate
+  indices — one pass, no rejection sampling. Adjacency counts are a second pass
+  computed into a scratch vector and then written back, which keeps the borrow
+  checker happy without a `RefCell`. The reveal is an iterative flood fill over
+  an explicit `Vec` stack: recursion would be O(depth) on a wasm stack that
+  can't grow, and a blank region can span the whole board. Each cell is
+  uncovered once and pushes at most eight neighbours, so the fill is O(8n) pops.
+- **"Still playing" is not a variant.** `Board::reveal` returns
+  `Option<GameResult>`, not a three-way `Outcome::{Continue, Won, Lost}`. The
+  three-way version lets a `Continue` leak into the terminal state where nothing
+  sensible can be rendered for it; with `Option`, the state machine can only
+  hold `Won` or `Lost` and every match on it is total.
+- **The view cannot cheat.** `GameState::apply(&self, action, rng) -> Self` is a
+  pure transition; the Yew layer only wraps it in `Reducible` and turns the
+  resulting `Board` into `<div>`s. That is why the 26 tests below can drive the
+  whole game — including "the game is over, ignore this click" — without
+  mounting a component.
+- **Release profile, measured.** `opt-level = "s"` + fat LTO +
+  `codegen-units = 1` + `panic = "abort"` takes the shipped wasm from 279 KiB to
+  193 KiB, a 31% cut, for about 20 seconds of build time. For a page whose only
+  payload *is* the binary, that trade is worth taking.
+
+## Tests
 
 ```bash
-trunk serve
+cargo test                                       # 26 tests, host toolchain, no browser
+cargo clippy --all-targets -- -D warnings
+trunk build --release                            # the wasm bundle
 ```
 
-Rebuilds the app whenever a change is detected and runs a local server to host it.
+The suite targets the rules a naive implementation gets wrong, and the test
+names state the case:
 
-There's also the `trunk watch` command which does the same thing but without hosting it.
-
-### Release
-
-```bash
-trunk build --release
-```
-
-This builds the app in release mode similar to `cargo build --release`.
-You can also pass the `--release` flag to `trunk serve` if you need to get every last drop of performance.
-
-Unless overwritten, the output will be located in the `dist` directory.
-
-## Using this template
-
-There are a few things you have to adjust when adopting this template.
-
-### Remove example code
-
-The code in [src/main.rs](src/main.rs) specific to the example is limited to only the `view` method.
-There is, however, a fair bit of Sass in [index.scss](index.scss) you can remove.
-
-### Update metadata
-
-Update the `name`, `version`, `description` and `repository` fields in the [Cargo.toml](Cargo.toml) file.
-The [index.html](index.html) file also contains a `<title>` tag that needs updating.
-
-Finally, you should update this very `README` file to be about your app.
-
-### License
-
-The template ships with both the Apache and MIT license.
-If you don't want to have your app dual licensed, just remove one (or both) of the files and update the `license` field in `Cargo.toml`.
-
-There are two empty spaces in the MIT license you need to fill out: `` and `Sushruth Chandrasekar <sushruth31@gmail.com>`.
-
-[trunk]: https://github.com/thedodd/trunk
-# minesweeper-rust
+- the opening click and all eight neighbours are mine-free, checked across 200
+  seeds on a board at maximum legal mine density;
+- flood fill reveals the numbered border of a blank region but never steps past
+  it, and never uncovers a mine;
+- flood fill skips flagged cells, so a marked guess survives the sweep;
+- adjacency counts do not wrap around the row boundary — the classic row-major
+  indexing bug where `(0, width-1)` and `(1, 0)` look adjacent;
+- neighbour counts drop to 5 on an edge and 3 in a corner;
+- a win requires every non-mine cell uncovered and is indifferent to flags;
+- flags, out-of-bounds coordinates and post-game-over clicks are all no-ops;
+- mine placement is reproducible for a fixed seed.
