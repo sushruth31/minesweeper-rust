@@ -262,30 +262,26 @@ mod tests {
 
     /// Builds a fully seeded board from a picture: `*` is a mine, `.` is not.
     fn layout(rows: &[&str]) -> Board {
-        let width = rows[0].len();
-        let mines = rows
-            .iter()
-            .flat_map(|row| row.bytes())
-            .filter(|b| *b == b'*')
-            .count();
-        let config = Config::new(width, rows.len(), 0).expect("test layout dimensions");
+        let cells: Vec<CellState> = rows.iter().flat_map(|row| row.bytes()).map(cell).collect();
+        let mines = cells.iter().filter(|c| c.content == Cell::Mine).count();
+        let config = Config::new(rows[0].len(), rows.len(), 0).expect("test layout dimensions");
         let mut board = Board::new(config);
         board.config = Config { mines, ..config };
-        board.cells = rows
-            .iter()
-            .flat_map(|row| row.bytes())
-            .map(|byte| CellState {
-                content: if byte == b'*' {
-                    Cell::Mine
-                } else {
-                    Cell::default()
-                },
-                ..CellState::default()
-            })
-            .collect();
+        board.cells = cells;
         board.count_adjacent();
         board.seeded = true;
         board
+    }
+
+    fn cell(byte: u8) -> CellState {
+        let content = match byte {
+            b'*' => Cell::Mine,
+            _ => Cell::default(),
+        };
+        CellState {
+            content,
+            ..CellState::default()
+        }
     }
 
     fn covered(board: &Board, row: usize, col: usize) -> bool {

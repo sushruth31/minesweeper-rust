@@ -65,21 +65,27 @@ fn game(props: &GameProps) -> Html {
         let (state, mode) = (state.clone(), *mode);
         Callback::from(move |(row, col)| state.dispatch(mode.action(row, col)))
     };
-    let on_restart = {
+    html! {
+        <main>
+            <h1>{ "Minesweeper" }</h1>
+            { toolbar(&mode, &state) }
+            { status(&state) }
+            { grid(&state.board, &on_cell) }
+        </main>
+    }
+}
+
+fn toolbar(mode: &UseStateHandle<Mode>, state: &UseReducerHandle<GameState>) -> Html {
+    let onclick = {
         let state = state.clone();
         Callback::from(move |_: MouseEvent| state.dispatch(Action::Restart))
     };
     html! {
-        <main>
-            <h1>{ "Minesweeper" }</h1>
-            <div class="toolbar">
-                { mode_button("Uncover", Mode::Uncover, &mode) }
-                { mode_button("Flag", Mode::Flag, &mode) }
-                <button onclick={on_restart} class="mode">{ "New game" }</button>
-            </div>
-            { status(&state) }
-            { grid(&state.board, &on_cell) }
-        </main>
+        <div class="toolbar">
+            { mode_button("Uncover", Mode::Uncover, mode) }
+            { mode_button("Flag", Mode::Flag, mode) }
+            <button {onclick} class="mode">{ "New game" }</button>
+        </div>
     }
 }
 
