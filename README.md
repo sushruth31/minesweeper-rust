@@ -17,8 +17,9 @@ that knows nothing about the browser, so they can be tested with a plain
 - **Trunk** — asset pipeline and dev server; runs `wasm-bindgen` and fingerprints
   the CSS so nothing needs a hand-written build script.
 - **rand** — `getrandom`'s `js` feature backs it with `crypto.getRandomValues`
-  in the browser. Every rules function takes a `&mut impl Rng`, so the tests
-  hand it a seeded `StdRng` and get byte-identical boards.
+  in the browser. Every rules function that needs randomness takes the `Rng` as
+  a parameter rather than reaching for a thread-local, so the tests hand it a
+  seeded `StdRng` and get byte-identical boards.
 
 No runtime dependencies beyond those, and no JavaScript of my own.
 
@@ -71,11 +72,15 @@ never compiles a line of DOM code.
 ## Design notes
 
 - **The first click is never a mine.** Mines are not placed at construction
-  time; the board stays empty until the first `reveal`, which then lays them at
-  random over every cell *except* the clicked one and its eight neighbours. That
-  guarantees the opening move always cracks open a blank region instead of
-  ending the game on move one — the single most common bug in a naive
-  implementation. It also has a consequence worth stating: nine cells can never
+  time; the board stays empty until the first `reveal` *that actually uncovers
+  something*, which then lays them at random over every cell **except** the
+  clicked one and its eight neighbours. That guarantees the opening move always
+  cracks open a blank region instead of ending the game on move one — the single
+  most common bug in a naive implementation. The ordering inside `reveal` is
+  load-bearing: seeding above the flagged/already-uncovered guard would let a
+  click on a flagged cell consume the guarantee and hand the player an
+  unprotected first real move, so the guard runs first and a test pins it down.
+  It also has a consequence worth stating: nine cells can never
   hold a mine, so `Config` rejects any mine count above `width * height - 9` at
   start-up rather than looping forever looking for a free square.
 - **Generation and flood fill are both O(n) in the number of cells.** Mines are
@@ -93,18 +98,21 @@ never compiles a line of DOM code.
   hold `Won` or `Lost` and every match on it is total.
 - **The view cannot cheat.** `GameState::apply(&self, action, rng) -> Self` is a
   pure transition; the Yew layer only wraps it in `Reducible` and turns the
-  resulting `Board` into `<div>`s. That is why the 26 tests below can drive the
+  resulting `Board` into `<div>`s. That is why the 28 tests below can drive the
   whole game — including "the game is over, ignore this click" — without
   mounting a component.
 - **Release profile, measured.** `opt-level = "s"` + fat LTO +
   `codegen-units = 1` + `panic = "abort"` takes the shipped wasm from 279 KiB to
-  193 KiB, a 31% cut, for about 20 seconds of build time. For a page whose only
-  payload *is* the binary, that trade is worth taking.
+  193 KiB — a 31% cut, measured by deleting `[profile.release]` and comparing
+  `dist/*.wasm`. For a page whose only payload *is* the binary that is the whole
+  performance budget, and the price is paid entirely in the release link step:
+  `codegen-units = 1` serialises it, while `trunk serve` runs the dev profile
+  and is untouched.
 
 ## Tests
 
 ```bash
-cargo test                                       # 26 tests, host toolchain, no browser
+cargo test                                       # 28 tests, host toolchain, no browser
 cargo clippy --all-targets -- -D warnings
 trunk build --release                            # the wasm bundle
 ```
@@ -114,6 +122,9 @@ names state the case:
 
 - the opening click and all eight neighbours are mine-free, checked across 200
   seeds on a board at maximum legal mine density;
+- a click that reveals nothing — a flagged cell — does not spend that
+  guarantee: the mines are laid by the first click that actually opens a cell,
+  not by the first click that arrives;
 - flood fill reveals the numbered border of a blank region but never steps past
   it, and never uncovers a mine;
 - flood fill skips flagged cells, so a marked guess survives the sweep;
