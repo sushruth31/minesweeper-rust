@@ -107,6 +107,12 @@ mod tests {
     }
 
     #[test]
+    fn the_build_environment_always_resolves_to_a_playable_board() {
+        let config = Config::from_build_env().expect("build variables describe a valid board");
+        assert!(config.mines + SAFE_REGION <= config.cells());
+    }
+
+    #[test]
     fn surrounding_whitespace_in_a_build_variable_is_tolerated() {
         assert_eq!(parse(WIDTH_VAR, Some(" 16 "), 10), Ok(16));
     }
