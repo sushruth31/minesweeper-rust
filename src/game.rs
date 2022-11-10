@@ -121,14 +121,16 @@ impl Board {
         if !self.contains(row, col) {
             return None;
         }
-        if !self.seeded {
-            self.seed((row, col), rng);
-        }
         let cell = self.cell(row, col);
         if cell.flagged || cell.uncovered {
             return None;
         }
-        if cell.content == Cell::Mine {
+        // Seeded only once the click is known to reveal something, or a click
+        // rejected above would spend the first-click guarantee on nothing.
+        if !self.seeded {
+            self.seed((row, col), rng);
+        }
+        if self.is_mine(row, col) {
             return self.lose();
         }
         self.flood(row, col);
@@ -436,6 +438,25 @@ mod tests {
             assert!(safe
                 .map(|(r, c)| board.cell(r, c))
                 .all(|cell| cell.content != Cell::Mine));
+        }
+    }
+
+    #[test]
+    fn a_click_on_a_flagged_cell_does_not_spend_first_click_safety() {
+        let config = Config::new(4, 4, 7).expect("valid config"); // maximum density
+        for seed in 0..200 {
+            let mut board = Board::new(config);
+            board.toggle_flag(0, 0);
+            assert_eq!(board.reveal(0, 0, &mut StdRng::seed_from_u64(seed)), None);
+            assert!(
+                !board.seeded,
+                "a click that revealed nothing laid the mines"
+            );
+            assert_ne!(
+                board.reveal(3, 3, &mut StdRng::seed_from_u64(seed)),
+                Some(GameResult::Lost),
+                "seed {seed} put a mine under the first visible reveal"
+            );
         }
     }
 
