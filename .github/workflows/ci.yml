@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: format
+        run: cargo fmt --check
+
+      - name: lint (host)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: lint (wasm)
+        run: cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
+
+      - name: test rules on the host toolchain
+        run: cargo test
+
+      - uses: jetli/trunk-action@v0.5.1
+        with:
+          version: latest
+
+      - name: build wasm bundle
+        run: trunk build --release
